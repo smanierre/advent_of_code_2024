@@ -145,9 +145,7 @@ func partTwo(disk []File) {
 			index++
 			continue
 		}
-		for i := index; i < index+v.Len(); i++ {
-			total += v.ID * i
-		}
+		total += v.ID * index
 		index += v.Len()
 	}
 	fmt.Println(time.Since(t))
