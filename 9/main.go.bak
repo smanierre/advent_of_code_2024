@@ -1,0 +1,190 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type Disk struct {
+	Contents     string
+	ID           int
+	Mapping      map[int]Count
+	lastIdPos    int
+	SwapHappened bool
+}
+
+type Count struct {
+	length int
+	value  int
+}
+
+func NewDisk(contents string, id int) *Disk {
+	d := &Disk{
+		Contents:     contents,
+		ID:           id,
+		Mapping:      make(map[int]Count),
+		lastIdPos:    len(contents),
+		SwapHappened: true,
+	}
+	newId := d.ID
+	c := d.Contents
+	for i := len(c) - 1; i > -1; i-- {
+		idStr := strconv.Itoa(newId)
+		idStrMinusOne := strconv.Itoa(newId - 1)
+		if i+len(idStr) > len(c) {
+			continue
+		}
+		if c[i:i+len(idStr)] == idStr {
+			d.Mapping[i] = Count{
+				length: len(idStr),
+				value:  newId,
+			}
+			c = c[:i] + strings.Repeat(".", len(idStr)) + c[i+len(idStr):]
+		}
+		if c[i:i+len(idStr)] == idStrMinusOne {
+			d.Mapping[i] = Count{
+				length: len(idStrMinusOne),
+				value:  newId - 1,
+			}
+			newId--
+			c = c[:i] + strings.Repeat(".", len(idStrMinusOne)) + c[i+len(idStrMinusOne):]
+		}
+	}
+	return d
+}
+
+func (d *Disk) Swap(i1, i2, length int) {
+	d.SwapHappened = true
+	tmp := d.Contents[i1 : i1+length]
+	b := &strings.Builder{}
+	b.WriteString(d.Contents[:i1])
+	b.WriteString(d.Contents[i2 : i2+length])
+	b.WriteString(d.Contents[i1+length : i2])
+	b.WriteString(tmp)
+	b.WriteString(d.Contents[i2+length:])
+	d.Contents = b.String()
+	d.Mapping[i1] = d.Mapping[i2]
+	delete(d.Mapping, i2)
+}
+
+func (d *Disk) FirstFreeSpace(size int) int {
+	count := 0
+	index := 0
+	for i, char := range d.Contents {
+		if string(char) == "." && count == 0 {
+			index = i
+			count++
+		} else if string(char) == "." {
+			count++
+		}
+		if count == size {
+			return index
+		}
+		if string(char) != "." {
+			count = 0
+			index = 0
+		}
+	}
+	return -1
+}
+
+func (d *Disk) MoveLastId(i, length int) {
+	firstFree := d.FirstFreeSpace(len(strconv.Itoa(d.ID)))
+	if firstFree == -1 {
+		d.ID--
+		return
+	}
+	if firstFree >= i {
+		d.ID--
+		return
+	}
+	if d.ID == 0 {
+		return
+	}
+	d.Swap(firstFree, i, length)
+	return
+}
+
+func (d *Disk) GetNextId() (int, int, int) {
+	d.SwapHappened = false
+	if d.ID == -1 {
+		return -1, -1, -1
+	}
+	idStr := strconv.Itoa(d.ID)
+	idStrMinusOne := strconv.Itoa(d.ID - 1)
+	for i := len(d.Contents) - 1; i > -1; i-- {
+		if i > d.lastIdPos {
+			continue
+		}
+		if i+len(idStr) > len(d.Contents) {
+			continue
+		}
+		if d.Contents[i:i+len(idStr)] == idStr {
+			return i, len(idStr), d.ID
+		}
+		if d.Contents[i:i+len(idStr)] == idStrMinusOne {
+			d.lastIdPos = i
+			d.ID--
+			return i, len(idStrMinusOne), d.ID
+		}
+	}
+	return d.GetNextId()
+}
+
+func main() {
+	f, err := os.Open("input.txt")
+	if err != nil {
+		log.Fatalf("Error opening input file: %s", err.Error())
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		log.Fatalf("Error reading input: %s", err.Error())
+	}
+	t := time.Now()
+	builder := &strings.Builder{}
+	space := false
+	id := -1
+	for _, v := range string(b) {
+		n, err := strconv.Atoi(string(v))
+		if err != nil {
+			log.Fatalf("Error converting input to integer: %s", err.Error())
+		}
+		if !space {
+			id++
+		}
+		for range n {
+			if space {
+				builder.WriteString(".")
+			} else {
+				builder.WriteString(fmt.Sprintf("%d", id))
+			}
+		}
+		space = !space
+	}
+	fmt.Printf("Prep time: %s\n", time.Since(t))
+	partOne(NewDisk(builder.String(), id))
+}
+
+func partOne(d *Disk) {
+	t := time.Now()
+	for d.SwapHappened {
+		for {
+			i, length, id := d.GetNextId()
+			if id == -1 {
+				break
+			}
+			d.MoveLastId(i, length)
+		}
+	}
+	total := 0
+	for k, v := range d.Mapping {
+		total += k * v.value
+	}
+	fmt.Println(total)
+	fmt.Println(time.Since(t))
+}
